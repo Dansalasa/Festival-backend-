@@ -3,31 +3,44 @@ const express = require("express");
 const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-const multer = require("multer");
 const cors = require("cors");
-const fs = require("fs");
 
 const app = express();
+
+// =====================
+// Middlewares
+// =====================
 app.use(express.json());
 app.use(cors());
 
 // =====================
+// Root Route
+// =====================
+app.get("/", (req, res) => {
+  res.send("🔥 Festival Backend is running successfully!");
+});
+
+// =====================
 // MongoDB Connection
 // =====================
+const PORT = process.env.PORT || 4000;
+
 mongoose
   .connect(process.env.MONGO_URI)
   .then(() => {
-    console.log("MongoDB Connected");
-    app.listen(4000, () => {
-      console.log("Server running on port 4000");
+    console.log("✅ MongoDB Connected");
+
+    app.listen(PORT, () => {
+      console.log("🚀 Server running on port " + PORT);
     });
   })
-  .catch((err) => console.log(err));
+  .catch((err) => {
+    console.error("❌ MongoDB Connection Error:", err.message);
+  });
 
 // =====================
-// Models
+// Schemas
 // =====================
-
 const userSchema = new mongoose.Schema({
   username: { type: String, unique: true },
   password: String,
@@ -38,94 +51,61 @@ const userSchema = new mongoose.Schema({
   ticketType: { type: String, default: null }
 });
 
-const photoSchema = new mongoose.Schema({
-  userId: mongoose.Schema.Types.ObjectId,
-  image: String,
-  votes: { type: Number, default: 0 },
-  createdAt: { type: Date, default: Date.now }
-});
-
-const transactionSchema = new mongoose.Schema({
-  userId: mongoose.Schema.Types.ObjectId,
-  type: String,
-  package: String,
-  amount: Number,
-  reference: String,
-  status: { type: String, default: "pending" }
-});
-
 const User = mongoose.model("User", userSchema);
-const Photo = mongoose.model("Photo", photoSchema);
-const Transaction = mongoose.model("Transaction", transactionSchema);
 
 // =====================
-// Auth Middleware
+// Register Route
 // =====================
-
-function auth(req, res, next) {
-  const token = req.headers.authorization;
-  if (!token) return res.status(401).json({ message: "No token" });
-
-  try {
-    const verified = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = verified;
-    next();
-  } catch {
-    res.status(400).json({ message: "Invalid token" });
-  }
-}
-
-// =====================
-// Register
-// =====================
-
 app.post("/register", async (req, res) => {
   try {
-    const { username, password, referral } = req.body;
+    const { username, password } = req.body;
 
-    const hashed = await bcrypt.hash(password, 10);
-
-    const referralCode = Math.random().toString(36).substring(7);
-
-    const user = new User({
-      username,
-      password: hashed,
-      referralCode
-    });
-
-    if (referral) {
-      const refUser = await User.findOne({ referralCode: referral });
-      if (refUser && refUser.referralCount < 2) {
-        refUser.coins += 4;
-        refUser.referralCount += 1;
-        await refUser.save();
-      }
+    const existingUser = await User.findOne({ username });
+    if (existingUser) {
+      return res.status(400).json({ message: "User already exists" });
     }
 
-    await user.save();
-    res.json({ message: "Registered successfully" });
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const newUser = new User({
+      username,
+      password: hashedPassword,
+      referralCode: Math.random().toString(36).substring(7)
+    });
+
+    await newUser.save();
+
+    res.json({ message: "Registered successfully ✅" });
   } catch (err) {
     res.status(500).json({ message: "Server error" });
   }
 });
 
 // =====================
-// Login
+// Login Route
 // =====================
-
 app.post("/login", async (req, res) => {
-  const { username, password } = req.body;
+  try {
+    const { username, password } = req.body;
 
-  const user = await User.findOne({ username });
-  if (!user) return res.status(400).json({ message: "User not found" });
+    const user = await User.findOne({ username });
+    if (!user) {
+      return res.status(400).json({ message: "User not found" });
+    }
 
-  const valid = await bcrypt.compare(password, user.password);
-  if (!valid) return res.status(400).json({ message: "Wrong password" });
+    const validPassword = await bcrypt.compare(password, user.password);
+    if (!validPassword) {
+      return res.status(400).json({ message: "Invalid password" });
+    }
 
-  const token = jwt.sign(
-    { id: user._id, role: user.role },
-    process.env.JWT_SECRET
-  );
+    const token = jwt.sign(
+      { id: user._id, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: "7d" }
+    );
 
-  res.json({ token });
+    res.json({ token });
+  } catch (err) {
+    res.status(500).json({ message: "Server error" });
+  }
 });
