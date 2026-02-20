@@ -38,7 +38,13 @@ mongoose
     console.error("❌ MongoDB Connection Error:", err.message);
   });
 
-// =====================
+// ================= USER MODEL =================
+const userSchema = new mongoose.Schema({
+  email: String,
+  coins: { type: Number, default: 0 }
+});
+
+const User = mongoose.model("User", userSchema);
 // Schemas
 // =====================
 const userSchema = new mongoose.Schema({
